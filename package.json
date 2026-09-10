@@ -1,0 +1,29 @@
+{
+  "name": "neoteric-connect-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Neoteric Connect — Owner Portfolio & Re-Investment System (backend API)",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "seed": "node seed.js",
+    "seed:users": "node seedUsers.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.10.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^8.9.5",
+    "multer": "^2.2.0",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
