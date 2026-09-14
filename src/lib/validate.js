@@ -53,15 +53,34 @@ export function validateDraft() {
   return {};
 }
 
+/* One unit sub-document, built from a flat draft the same way every
+   bulk-import/quick-add row already is — extracted out of
+   buildCustomer() below so "add another unit to an existing owner"
+   (see customers.js' POST /:id/units) builds the exact same shape
+   instead of a second, driftable copy of it. */
+export function buildUnit(d) {
+  const p = projByName(d.project) || PROJECTS[0];
+  const bd = dateOrNull(d.bookDate);
+  const sa = numOrNull(d.saleable), rt = numOrNull(d.rate), dc = numOrNull(d.discount) ?? 0, co = numOrNull(d.consideration), pd = numOrNull(d.paid);
+  return {
+    unit: d.unit ? String(d.unit).trim() : null, project: p.name, entity: p.entity, type: '—',
+    carpet: sa != null ? Math.round(sa * 0.68) : null, saleable: sa, loading: 32,
+    bookDate: bd, agrDate: null, regDate: null, possDate: null,
+    rate: rt, discount: dc, consideration: co, paid: pd ?? 0,
+    receipts: pd ? 1 : 0, bounced: 0, lastReceipt: bd,
+    loan: { bank: null, tenure: 0, start: null, closure: null, closed: true, prepaid: false, selfFunded: true },
+    val: { ask: p.ask, resale: p.resale, circle: p.circle, notedOn: p.noted, basis: p.basis, by: p.by },
+    exited: false,
+  };
+}
+
 /* Port of buildCustomer() from src/lib/intake.js — takes a draft +
    a freshly-issued id and returns the raw Customer shape. Never
    throws: an unmatched project falls back to PROJECTS[0] (rather
    than crashing on `p.entity` of undefined), a bad/missing number or
    date becomes null rather than NaN or an Invalid Date. */
 export function buildCustomer(d, id) {
-  const p = projByName(d.project) || PROJECTS[0];
   const bd = dateOrNull(d.bookDate);
-  const sa = numOrNull(d.saleable), rt = numOrNull(d.rate), dc = numOrNull(d.discount) ?? 0, co = numOrNull(d.consideration), pd = numOrNull(d.paid);
   const pan = d.pan ? String(d.pan).replace(/\s/g, '').toUpperCase() : null;
 
   const profile = validateProfilePatch(normalizeProfileInput(d)).patch;
@@ -72,16 +91,7 @@ export function buildCustomer(d, id) {
   if (profile.corrAddr) captured.addr = true;
   const hasConsent = profile.consent && Object.entries(profile.consent).some(([k, v]) => k !== 'purpose' && v === true);
 
-  const unit = {
-    unit: d.unit ? String(d.unit).trim() : null, project: p.name, entity: p.entity, type: '—',
-    carpet: sa != null ? Math.round(sa * 0.68) : null, saleable: sa, loading: 32,
-    bookDate: bd, agrDate: null, regDate: null, possDate: null,
-    rate: rt, discount: dc, consideration: co, paid: pd ?? 0,
-    receipts: pd ? 1 : 0, bounced: 0, lastReceipt: bd,
-    loan: { bank: null, tenure: 0, start: null, closure: null, closed: true, prepaid: false, selfFunded: true },
-    val: { ask: p.ask, resale: p.resale, circle: p.circle, notedOn: p.noted, basis: p.basis, by: p.by },
-    exited: false,
-  };
+  const unit = buildUnit(d);
 
   return {
     id, status: 'ACTIVE', statusSince: bd || TODAY, statusNote: null,
@@ -89,7 +99,7 @@ export function buildCustomer(d, id) {
     name: d.name ? String(d.name).trim() : '',
     coApplicant: profile.coApplicant ?? null, coRelation: profile.coRelation ?? 'Spouse', coOnAgreement: profile.coOnAgreement ?? false,
     dob: profile.dob ?? null, spouseDob: profile.spouseDob ?? null, children: [],
-    pan, aadhaarHeld: false, kycDate: profile.kycDate ?? bd,
+    pan, aadhaarHeld: false, aadhaarNo: null, kycDate: profile.kycDate ?? bd,
     mobile: d.mobile ? String(d.mobile).trim() : '', email: profile.email ?? null,
     corrAddr: profile.corrAddr ?? 'Address not updated since booking', city: profile.city ?? 'Gwalior',
     occupation: profile.occupation ?? 'Not captured', occBand: profile.occBand ?? 50, incomeBand: profile.incomeBand ?? null,
@@ -132,6 +142,7 @@ export function validateProfilePatch(d) {
   if (d.mobile !== undefined) p.mobile = String(d.mobile || '').trim() || null;
   if (d.pan !== undefined) p.pan = String(d.pan || '').replace(/\s/g, '').toUpperCase() || null;
   if (d.aadhaarHeld !== undefined) p.aadhaarHeld = !!d.aadhaarHeld;
+  if (d.aadhaarNo !== undefined) p.aadhaarNo = String(d.aadhaarNo || '').replace(/\s/g, '') || null;
   if (d.source !== undefined) p.source = String(d.source || '').trim() || null;
   if (d.dob !== undefined) p.dob = dateOrNull(d.dob);
   if (d.spouseDob !== undefined) p.spouseDob = dateOrNull(d.spouseDob);

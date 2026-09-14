@@ -97,6 +97,21 @@ const EventSchema = new Schema({
   d: Date,
 }, { _id: false });
 
+/* Manual, staff-written reminders — distinct from the system-computed
+   "Dated reasons to make contact" (birthdays, LTCG windows, etc. — see
+   MTriggers.jsx): a follow-up is only ever created by a person, about
+   something only they know to check back on. Keeps its own real _id
+   (unlike units/complaints above) since it's addressed directly by
+   id, not by array index + a composite key — nothing about a
+   follow-up's position in the list is ever load-bearing. */
+const FollowUpSchema = new Schema({
+  note: { type: String, required: true },
+  dueAt: { type: Date, required: true },
+  done: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
+  createdBy: { type: String, default: null },
+});
+
 const StatementSchema = new Schema({
   d: Date,
   v: String,
@@ -187,6 +202,7 @@ const CustomerSchema = new Schema({
   children: { type: [ChildSchema], default: [] },
   pan: { type: String, required: false, default: null, index: true },
   aadhaarHeld: { type: Boolean, default: false },
+  aadhaarNo: { type: String, default: null },
   kycDate: { type: Date, default: null },
   mobile: { type: String, default: '', index: true },
   email: { type: String, default: null },
@@ -213,6 +229,7 @@ const CustomerSchema = new Schema({
   litigation: { type: Boolean, default: false },
   referrals: { type: [ReferralSchema], default: [] },
   events: { type: [EventSchema], default: [] },
+  followUps: { type: [FollowUpSchema], default: [] },
   siteVisits: { type: Number, default: 0 },
   portalLast: { type: Date, default: null },
   statements: { type: [StatementSchema], default: [] },

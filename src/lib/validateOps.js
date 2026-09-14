@@ -10,7 +10,7 @@
    (backend/src/lib/core.js), which is the real calendar date
    normalised to local midnight — so entering today's own date never
    reads as "in the future". */
-import { TODAY, TODAY_UTC_MIDNIGHT, fmtD, OCCUPANCIES } from './core.js';
+import { TODAY, TODAY_UTC_MIDNIGHT, fmtD, OCCUPANCIES, projByName } from './core.js';
 
 export const STATUSES = ['ACTIVE', 'EXITED', 'TRANSFER_IN_PROGRESS', 'DECEASED'];
 export const REFERRAL_STATUSES = ['Booked', 'Open — no follow-up logged', 'Lost — budget'];
@@ -181,6 +181,18 @@ export function validateFinancialsPatch(d) {
     if (!v) e.newUnit = 'Enter a unit number.';
     else p.unit = v;
   }
+  /* project (and the entity it implies — the two must never disagree)
+     was entered wrong at booking/import time often enough this session
+     to be worth fixing from here rather than only at create time. The
+     valuation note (ask/resale/circle/basis) deliberately isn't
+     touched — it's the project's own current note, edited separately
+     from "Valuation basis" below, and moving a unit shouldn't silently
+     borrow the wrong project's numbers or blank out the right ones. */
+  if (d.newProject !== undefined) {
+    const proj = projByName(d.newProject);
+    if (!proj) e.newProject = 'Choose a valid project.';
+    else { p.project = proj.name; p.entity = proj.entity; }
+  }
   /* saleable/rate are what this form exists to fix, so a blank one is
      a mistake worth stopping for. carpet is supplementary context the
      form happens to also show — blank there just means "not entered",
@@ -263,6 +275,20 @@ export function validateEventPatch(d) {
 /* the result of a call made off the Trigger Calendar — this is the
    piece that was missing before outcome data exists anywhere to re-fit
    the score weights against (see Activity log's footer note). */
+/* Unlike parseDateNotFuture above, a follow-up's whole point is a
+   moment that hasn't happened yet — no "not in the future" check here,
+   and the value is a full datetime (from a `datetime-local` input),
+   not a date-only string, so the time-of-day survives. */
+export function validateFollowUpPatch(d) {
+  const e = {};
+  const note = String(d.note || '').trim();
+  if (!note) e.note = 'Enter what to follow up on.';
+  const dt = new Date(d.dueAt);
+  if (!d.dueAt || Number.isNaN(dt.getTime())) e.dueAt = 'Choose a valid date and time.';
+  if (Object.keys(e).length) return { errors: e, patch: null };
+  return { errors: {}, patch: { note, dueAt: dt } };
+}
+
 export function validateCallPatch(d) {
   const e = {};
   const outcome = String(d.outcome || '').trim();

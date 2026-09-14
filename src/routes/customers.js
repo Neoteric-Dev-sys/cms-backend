@@ -3,13 +3,14 @@ import multer from 'multer';
 import Customer from '../models/Customer.js';
 import Counter, { nextCustomerId } from '../models/Counter.js';
 import { isCloudinaryConfigured, uploadBuffer, deleteAsset } from '../lib/cloudinary.js';
-import { validateDraft, buildCustomer, validateProfilePatch } from '../lib/validate.js';
+import { validateDraft, buildCustomer, buildUnit, validateProfilePatch } from '../lib/validate.js';
 import { validateShellDraft, buildShellCustomer, validateCompletion } from '../lib/validateIncomplete.js';
 import {
   validateStatusPatch, validateLitigationPatch, validateComplaintOpen, validateComplaintClose,
   validateLoanPatch, validateValuationPatch, validateNpsPatch, validateReferralPatch,
   validateEventPatch, validateExitPatch, validateMilestonesPatch, validateCallPatch,
-  validateOccupancyPatch, validateFinancialsPatch, validateTriggerAckPatch, matchUnit, matchComplaint,
+  validateOccupancyPatch, validateFinancialsPatch, validateTriggerAckPatch, validateFollowUpPatch,
+  matchUnit, matchComplaint,
 } from '../lib/validateOps.js';
 import { gate } from '../lib/gate.js';
 import { TODAY, computeIncomplete, normName, normMobile } from '../lib/core.js';
@@ -495,6 +496,58 @@ router.post('/:id/events', requirePermission('Engagement data — NPS, referrals
   res.status(201).json(customer);
 }));
 
+/* Manual reminders (see FollowUpSchema) — the Notification Bell reads
+   these across every owner the same way it already reads the
+   system-computed Trigger Calendar list, so a staff-written "call back
+   next Tuesday about the loan" note surfaces exactly like a birthday
+   does, without a push service or scheduled job: the bell just checks
+   "is dueAt now or past, and not done" whenever the app is open. */
+router.post('/:id/followups', requirePermission('Engagement data — NPS, referrals, events, visits'), asyncHandler(async (req, res) => {
+  const customer = await Customer.findOne({ id: req.params.id });
+  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+  const { errors, patch } = validateFollowUpPatch(req.body || {});
+  if (Object.keys(errors).length) return res.status(400).json({ errors });
+
+  customer.followUps.push({ ...patch, createdBy: req.user.name });
+  await customer.save();
+  res.status(201).json(customer);
+}));
+
+router.patch('/:id/followups/:followupId', requirePermission('Engagement data — NPS, referrals, events, visits'), asyncHandler(async (req, res) => {
+  const customer = await Customer.findOne({ id: req.params.id });
+  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+  const followUp = customer.followUps.id(req.params.followupId);
+  if (!followUp) return res.status(404).json({ error: 'Follow-up not found.' });
+
+  /* toggling done is the common case and never touches note/dueAt;
+     editing either of those re-validates them the same as on create. */
+  if (req.body?.done !== undefined) {
+    followUp.done = !!req.body.done;
+  } else {
+    const { errors, patch } = validateFollowUpPatch({ note: req.body?.note ?? followUp.note, dueAt: req.body?.dueAt ?? followUp.dueAt });
+    if (Object.keys(errors).length) return res.status(400).json({ errors });
+    followUp.note = patch.note;
+    followUp.dueAt = patch.dueAt;
+  }
+
+  await customer.save();
+  res.json(customer);
+}));
+
+router.delete('/:id/followups/:followupId', requirePermission('Engagement data — NPS, referrals, events, visits'), asyncHandler(async (req, res) => {
+  const customer = await Customer.findOne({ id: req.params.id });
+  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+  const followUp = customer.followUps.id(req.params.followupId);
+  if (!followUp) return res.status(404).json({ error: 'Follow-up not found.' });
+  followUp.deleteOne();
+
+  await customer.save();
+  res.json(customer);
+}));
+
 router.post('/:id/site-visits', requirePermission('Engagement data — NPS, referrals, events, visits'), asyncHandler(async (req, res) => {
   const customer = await Customer.findOne({ id: req.params.id });
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
@@ -576,6 +629,67 @@ router.patch('/:id/units/:index/exit', requirePermission('Owner status and trans
     customer.statusNote = customer.statusNote || 'All units exited.';
   }
 
+  await customer.save();
+  res.json(customer);
+}));
+
+/* Adds another unit to an existing owner — the direct-from-Customer-
+   Master path for a second/third booking, instead of the only other
+   way this happens today (re-running the bulk owner import with the
+   same name+mobile, which merges in via mergeIntoExistingOwner). Built
+   with the exact same buildUnit() the bulk import and quick-add form
+   already use, so the shape can't drift between the three entry
+   points. Refuses an exact project+unit duplicate of one already on
+   this owner's record — this session's own duplicate-unit clean-up is
+   exactly the mistake this guards against; edit the existing unit
+   instead of adding a second copy of it. */
+router.post('/:id/units', requirePermission('Owner base — names and units'), asyncHandler(async (req, res) => {
+  const customer = await Customer.findOne({ id: req.params.id });
+  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+  const draft = req.body || {};
+  const project = String(draft.project || '').trim();
+  const unitNo = String(draft.unit || '').trim();
+  if (!project) return res.status(400).json({ errors: { project: 'Choose a project.' } });
+  if (!unitNo) return res.status(400).json({ errors: { unit: 'Enter a unit number.' } });
+
+  const dupe = customer.units.some((u) => u.project === project && u.unit === unitNo);
+  if (dupe) {
+    return res.status(409).json({ error: `${customer.name} already has a unit "${unitNo}" in ${project} — edit that one instead of adding a duplicate.` });
+  }
+
+  const unit = buildUnit({ ...draft, project, unit: unitNo });
+  customer.units.push(unit);
+  customer.markModified('units');
+  await customer.save();
+  res.status(201).json(customer);
+}));
+
+/* Removes one unit sub-document from an owner's record — the fix path
+   for a duplicate/erroneous unit entry (e.g. the same project+unit
+   booked twice by a merge or bulk-import mistake), not a way to record
+   a real disposal (that's "Mark exited" above, which keeps the unit's
+   history). Refuses to leave an owner with zero units — the rest of
+   the app (Owner Base's project/unit columns, roll(), the segment/
+   gate pipeline) assumes at least one; deleting the last one is what
+   "Delete owner" on Owner Base is for instead. */
+router.delete('/:id/units/:index', requirePermission('Owner base — names and units'), asyncHandler(async (req, res) => {
+  const customer = await Customer.findOne({ id: req.params.id });
+  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+  const idx = Number(req.params.index);
+  const unit = customer.units[idx];
+  const key = { unit: req.body?.unit, project: req.body?.project };
+  if (!matchUnit(unit, key)) {
+    return res.status(409).json({ error: 'This unit list changed since you loaded it — refresh and try again.' });
+  }
+  if (customer.units.length <= 1) {
+    return res.status(400).json({ error: 'An owner must keep at least one unit — delete the owner instead if none should remain.' });
+  }
+
+  customer.units.splice(idx, 1);
+  customer.markModified('units');
+  customer.incomplete = computeIncomplete(customer.pan, customer.units[0]);
   await customer.save();
   res.json(customer);
 }));

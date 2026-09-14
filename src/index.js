@@ -14,6 +14,7 @@ import usersRouter from './routes/users.js';
 import rolesRouter from './routes/roles.js';
 import settingsRouter from './routes/settings.js';
 import Customer from './models/Customer.js';
+import Settings from './models/Settings.js';
 import { requireAuth, requirePermission } from './lib/auth.js';
 import { seedRoles, refreshRoles } from './lib/roleStore.js';
 import { MANAGE_USERS } from './lib/permissions.js';
@@ -83,6 +84,19 @@ connectDB()
       console.error('Change stream error:', err.message);
     });
 
+    /* same live-sync pattern as Customer above — the Portfolio
+       Statement letterhead (and anywhere else Settings is read) is
+       shared, mutable state with no per-user scope, so a change from
+       one signed-in tab (or a direct DB edit) should reach every other
+       open tab without a manual refresh. */
+    const settingsChangeStream = Settings.watch();
+    settingsChangeStream.on('change', () => {
+      io.emit('settings:changed', {});
+    });
+    settingsChangeStream.on('error', (err) => {
+      console.error('Settings change stream error:', err.message);
+    });
+
     io.on('connection', (socket) => {
       console.log('Realtime client connected:', socket.id);
     });
@@ -94,6 +108,7 @@ connectDB()
        the old process's teardown and hit EADDRINUSE on the new one */
     const shutdown = () => {
       changeStream.close().catch(() => {});
+      settingsChangeStream.close().catch(() => {});
       server.close(() => {
         mongoose.connection.close(false).then(() => process.exit(0));
       });
