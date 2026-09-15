@@ -73,6 +73,22 @@ export function validateLitigationPatch(d) {
   return { errors: {}, patch: { litigation: !!d.litigation } };
 }
 
+/* an empty/null `seg` clears the override (back to whatever segOf()
+   in derived.js computes) and needs no reason — removing a judgment
+   call doesn't need justifying the way making one does. Setting a
+   real A/B/C/D always requires one, so it reads later as a documented
+   decision rather than an unexplained number. */
+export function validateSegmentOverridePatch(d) {
+  const e = {};
+  const seg = String(d.seg || '').trim();
+  if (!seg) return { errors: {}, patch: { seg: null, reason: null } };
+  if (!['A', 'B', 'C', 'D'].includes(seg)) e.seg = 'Choose a valid segment.';
+  const reason = String(d.reason || '').trim();
+  if (!reason) e.reason = 'Explain why this overrides the computed segment.';
+  if (Object.keys(e).length) return { errors: e, patch: null };
+  return { errors: {}, patch: { seg, reason } };
+}
+
 /* unit is required — a complaint is against one specific flat, not
    the owner in the abstract, so "which unit" has to be captured at
    the point of logging or it's unrecoverable later. project is

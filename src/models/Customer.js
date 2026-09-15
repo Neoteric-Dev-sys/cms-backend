@@ -227,6 +227,21 @@ const CustomerSchema = new Schema({
      exits, holding period) as a *suggestion* alongside this, but the
      stored classification is only ever what someone actually set. */
   ownerType: { type: String, default: null },
+  /* forces the A/B/C/D chip everywhere (Owner Base, Trigger Calendar,
+     Command Centre…) to a specific value instead of whatever segOf()
+     in derived.js would compute from the score — a deliberate escape
+     hatch for the rare real-world case the scoring rules don't fit,
+     always carrying a `reason` so it reads as a documented judgment
+     call rather than a silently gamed number. Has no effect while the
+     Contact Gate is closed: segOf() already forces 'C' there
+     regardless of score, and a manual override promoting someone past
+     a closed gate would defeat the entire point of the gate. */
+  segmentOverride: {
+    seg: { type: String, enum: ['A', 'B', 'C', 'D', null], default: null },
+    reason: { type: String, default: null },
+    by: { type: String, default: null },
+    date: { type: Date, default: null },
+  },
   captured: CapturedSchema,
   consent: ConsentSchema,
   source: String,

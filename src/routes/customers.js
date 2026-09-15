@@ -10,6 +10,7 @@ import {
   validateLoanPatch, validateValuationPatch, validateNpsPatch, validateReferralPatch,
   validateEventPatch, validateExitPatch, validateMilestonesPatch, validateCallPatch,
   validateOccupancyPatch, validateFinancialsPatch, validateTriggerAckPatch, validateFollowUpPatch,
+  validateSegmentOverridePatch,
   matchUnit, matchComplaint,
 } from '../lib/validateOps.js';
 import { gate } from '../lib/gate.js';
@@ -243,6 +244,26 @@ router.patch('/:id/litigation', requirePermission('Litigation flag and case note
   res.json(customer);
 }));
 
+/* Forces the segment chip to a specific A/B/C/D instead of whatever
+   segOf() computes (see derived.js) — a documented exception to the
+   scoring rules, not a way around them: has no visible effect while
+   the Contact Gate is closed, since segOf() forces 'C' there
+   regardless of this override. An empty `seg` clears it back to the
+   computed value. */
+router.patch('/:id/segment-override', requirePermission('Propensity score and segment'), asyncHandler(async (req, res) => {
+  const customer = await Customer.findOne({ id: req.params.id });
+  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+  const { errors, patch } = validateSegmentOverridePatch(req.body || {});
+  if (Object.keys(errors).length) return res.status(400).json({ errors });
+
+  customer.segmentOverride = patch.seg
+    ? { seg: patch.seg, reason: patch.reason, by: req.user.name, date: TODAY }
+    : { seg: null, reason: null, by: null, date: null };
+  await customer.save();
+  res.json(customer);
+}));
+
 router.post('/:id/complaints', requirePermission('Complaints and NCR references'), asyncHandler(async (req, res) => {
   const customer = await Customer.findOne({ id: req.params.id });
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
@@ -454,11 +475,15 @@ router.post('/:id/documents', requirePermission('Owner base — names and units'
   res.status(201).json(customer);
 }));
 
-/* Document Vault — attaches a page that already lives somewhere else
-   (a shared Google Drive folder, typically) by URL instead of a
-   re-uploaded copy. Same additive, one-row-per-page shape as a real
-   upload (see the route above) — this just skips Cloudinary entirely,
-   since there's no file here for this app to store. */
+/* Document Vault — attaches one or more pages that already live
+   somewhere else (a shared Google Drive folder, typically) by URL
+   instead of a re-uploaded copy. Same additive, one-row-per-page
+   shape as a real upload (see the route above), all numbered in one
+   pass so pasting several links at once can't race a second request
+   for the next page number — this just skips Cloudinary entirely,
+   since there's no file here for this app to store. `urls` (an array)
+   is the normal shape; a lone `url` string still works the same way
+   for a single link. */
 router.post('/:id/documents/link', requirePermission('Owner base — names and units'), asyncHandler(async (req, res) => {
   const customer = await Customer.findOne({ id: req.params.id });
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
@@ -466,13 +491,19 @@ router.post('/:id/documents/link', requirePermission('Owner base — names and u
   const key = String(req.body?.key || '').trim();
   if (!key) return res.status(400).json({ errors: { url: 'Missing document reference — reload and try again.' } });
 
-  const url = String(req.body?.url || '').trim();
-  if (!/^https?:\/\//i.test(url)) {
-    return res.status(400).json({ errors: { url: 'Paste a full link starting with http:// or https://.' } });
+  const raw = Array.isArray(req.body?.urls) ? req.body.urls : [req.body?.url];
+  const urls = raw.map((u) => String(u || '').trim()).filter(Boolean);
+  if (!urls.length) return res.status(400).json({ errors: { url: 'Paste at least one link.' } });
+  const bad = urls.find((u) => !/^https?:\/\//i.test(u));
+  if (bad) {
+    return res.status(400).json({ errors: { url: `"${bad}" isn't a full link — it must start with http:// or https://.` } });
   }
 
-  const nextPage = customer.documents.filter((x) => x.key === key).length + 1;
-  customer.documents.push({ key, page: nextPage, source: 'link', filename: 'Linked document', url, uploadedAt: TODAY });
+  let nextPage = customer.documents.filter((x) => x.key === key).length + 1;
+  urls.forEach((url) => {
+    customer.documents.push({ key, page: nextPage, source: 'link', filename: 'Linked document', url, uploadedAt: TODAY });
+    nextPage++;
+  });
   customer.markModified('documents');
   await customer.save();
   res.status(201).json(customer);
