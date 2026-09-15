@@ -175,18 +175,27 @@ const ReferredBySchema = new Schema({
   id: String,
 }, { _id: false });
 
-/* one uploaded file per Document Vault checklist row (see docsFor() in
-   the frontend's derived.js) — `key` matches that row's stable key
-   (e.g. 'kyc', 'agreement-GC-C-305'), so an upload replaces whatever
-   was there before rather than accumulating duplicates. Stored on
-   Cloudinary, not this app's own disk (see lib/cloudinary.js). */
+/* One row per page attached to a Document Vault checklist row (see
+   docsFor() in the frontend's derived.js) — `key` matches that row's
+   stable key (e.g. 'kyc', 'agreement-GC-C-305'). A multi-page paper
+   document (a sale agreement scanned as 3 photos, say) is several
+   DocumentSchema rows sharing that key, ordered by `page`, and every
+   upload adds page(s) rather than replacing what's there. Keeps its
+   own real `_id` (unlike most of this file's sub-schemas) so a single
+   page can be deleted without touching the others on the same key.
+   `source` 'upload' is Cloudinary-hosted (see lib/cloudinary.js) and
+   carries a `publicId` to delete later; 'link' just points `url` at
+   wherever the file already lives (a shared Google Drive folder,
+   typically) and has no Cloudinary asset behind it to clean up. */
 const DocumentSchema = new Schema({
   key: { type: String, required: true },
+  page: { type: Number, default: 1 },
+  source: { type: String, enum: ['upload', 'link'], default: 'upload' },
   filename: String,
   url: { type: String, required: true },
-  publicId: { type: String, required: true },
+  publicId: { type: String, default: null },
   uploadedAt: { type: Date, default: null },
-}, { _id: false });
+});
 
 const CustomerSchema = new Schema({
   id: { type: String, required: true, unique: true, index: true },

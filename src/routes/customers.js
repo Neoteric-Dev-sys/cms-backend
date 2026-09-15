@@ -423,35 +423,76 @@ router.patch('/:id/units/:index/milestones', requirePermission('Owner base — n
   res.json(customer);
 }));
 
-/* Document Vault upload — attaches a real file (Cloudinary-hosted) to
-   one checklist row (see docsFor()'s `key` in derived.js). Re-uploading
-   under the same key replaces the previous file rather than
-   accumulating duplicates. */
-router.post('/:id/documents', requirePermission('Owner base — names and units'), upload.single('file'), asyncHandler(async (req, res) => {
+/* Document Vault upload — attaches one or more real files (Cloudinary-
+   hosted) as pages under one checklist row (see docsFor()'s `key` in
+   derived.js). Every upload ADDS page(s) after whatever's already on
+   file for that key, rather than replacing it — a multi-page paper
+   document rarely gets scanned in one sitting, so "upload" and "add
+   another page" are the same action here. Use the delete route below
+   to remove a page uploaded by mistake. */
+router.post('/:id/documents', requirePermission('Owner base — names and units'), upload.array('files', 20), asyncHandler(async (req, res) => {
   if (!isCloudinaryConfigured()) {
     return res.status(500).json({ error: 'Document storage is not set up yet — add CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET to the backend .env.' });
   }
   const customer = await Customer.findOne({ id: req.params.id });
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
-  if (!req.file) return res.status(400).json({ errors: { file: 'Choose a PDF, JPG or PNG file.' } });
+  if (!req.files?.length) return res.status(400).json({ errors: { file: 'Choose one or more PDF, JPG or PNG files.' } });
 
   const key = String(req.body?.key || '').trim();
   if (!key) return res.status(400).json({ errors: { file: 'Missing document reference — reload and try again.' } });
 
-  const existing = customer.documents.find((x) => x.key === key);
   const folder = `neoteric-connect/${customer.id}`;
-  const filename = `${key}-${Date.now()}`;
-  const { url, publicId } = await uploadBuffer(req.file.buffer, { folder, filename });
-
-  if (existing) {
-    await deleteAsset(existing.publicId);
-    Object.assign(existing, { filename: req.file.originalname, url, publicId, uploadedAt: TODAY });
-  } else {
-    customer.documents.push({ key, filename: req.file.originalname, url, publicId, uploadedAt: TODAY });
+  let nextPage = customer.documents.filter((x) => x.key === key).length + 1;
+  for (const file of req.files) {
+    const filename = `${key}-${Date.now()}-${nextPage}`;
+    const { url, publicId } = await uploadBuffer(file.buffer, { folder, filename });
+    customer.documents.push({ key, page: nextPage, filename: file.originalname, url, publicId, uploadedAt: TODAY });
+    nextPage++;
   }
   customer.markModified('documents');
   await customer.save();
   res.status(201).json(customer);
+}));
+
+/* Document Vault — attaches a page that already lives somewhere else
+   (a shared Google Drive folder, typically) by URL instead of a
+   re-uploaded copy. Same additive, one-row-per-page shape as a real
+   upload (see the route above) — this just skips Cloudinary entirely,
+   since there's no file here for this app to store. */
+router.post('/:id/documents/link', requirePermission('Owner base — names and units'), asyncHandler(async (req, res) => {
+  const customer = await Customer.findOne({ id: req.params.id });
+  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+  const key = String(req.body?.key || '').trim();
+  if (!key) return res.status(400).json({ errors: { url: 'Missing document reference — reload and try again.' } });
+
+  const url = String(req.body?.url || '').trim();
+  if (!/^https?:\/\//i.test(url)) {
+    return res.status(400).json({ errors: { url: 'Paste a full link starting with http:// or https://.' } });
+  }
+
+  const nextPage = customer.documents.filter((x) => x.key === key).length + 1;
+  customer.documents.push({ key, page: nextPage, source: 'link', filename: 'Linked document', url, uploadedAt: TODAY });
+  customer.markModified('documents');
+  await customer.save();
+  res.status(201).json(customer);
+}));
+
+/* Removes one uploaded page — the rest of that key's pages (and their
+   own page numbers) are untouched, so deleting page 2 of 3 just leaves
+   pages 1 and 3 rather than renumbering everything. */
+router.delete('/:id/documents/:docId', requirePermission('Owner base — names and units'), asyncHandler(async (req, res) => {
+  const customer = await Customer.findOne({ id: req.params.id });
+  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+  const doc = customer.documents.id(req.params.docId);
+  if (!doc) return res.status(404).json({ error: 'Page not found — reload and try again.' });
+
+  await deleteAsset(doc.publicId);
+  doc.deleteOne();
+  customer.markModified('documents');
+  await customer.save();
+  res.json(customer);
 }));
 
 /* =====================================================================
