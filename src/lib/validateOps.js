@@ -31,18 +31,27 @@ function parseDateNotFuture(v, label) {
   return { date: dt };
 }
 
+/* A unit's own number is exactly what's still missing on a shell/
+   incomplete record (see validateIncomplete.js) — CompleteRecordModal
+   and this financials-edit path both need to key on such a unit before
+   it has one, so only `project` is actually required here; `unit`
+   itself is allowed to be blank. */
 function parseUnitKey(d) {
   const unit = String(d.unit || '').trim();
   const project = String(d.project || '').trim();
-  if (!unit || !project) return { error: 'Missing unit reference — reload and try again.' };
+  if (!project) return { error: 'Missing unit reference — reload and try again.' };
   return { unit, project };
 }
 
 /* 409-worthy: the loaded document's item at the client-supplied array
    index doesn't match the natural key the client last saw there —
-   someone else's edit shifted the array in between. */
+   someone else's edit shifted the array in between. Both sides are
+   normalised the same way (`unit.unit` can be a real `null` from the
+   database; `key.unit` is always a string, '' when blank) so a unit
+   with no number yet still matches its own key instead of failing a
+   strict `null === ''` comparison. */
 export function matchUnit(unit, key) {
-  return !!unit && unit.unit === key.unit && unit.project === key.project;
+  return !!unit && String(unit.unit || '').trim() === key.unit && unit.project === key.project;
 }
 export function matchComplaint(item, ncr) {
   return !!item && item.ncr === ncr;
@@ -193,6 +202,12 @@ export function validateFinancialsPatch(d) {
     if (!proj) e.newProject = 'Choose a valid project.';
     else { p.project = proj.name; p.entity = proj.entity; }
   }
+  /* free text either way — the Villa/Plot/Flat(+BHK)/Other picker that
+     builds this string lives entirely in UnitFinancialsModal.jsx; the
+     schema field itself (`type`) has never been more than a plain
+     string (see UnitSchema), so there's nothing here to validate
+     beyond accepting whatever was sent. */
+  if (d.propertyType !== undefined) p.type = String(d.propertyType || '').trim() || null;
   /* saleable/rate are what this form exists to fix, so a blank one is
      a mistake worth stopping for. carpet is supplementary context the
      form happens to also show — blank there just means "not entered",
@@ -311,7 +326,7 @@ export function validateTriggerAckPatch(d) {
   const date = String(d.date || '').trim();
   if (!date || Number.isNaN(new Date(date).getTime())) e.date = 'Missing trigger date — reload and try again.';
   if (Object.keys(e).length) return { errors: e, patch: null };
-  return { errors: {}, patch: { label, date } };
+  return { errors: {}, patch: { label, date, remark: String(d.remark || '').trim() || null } };
 }
 
 /* Agreement / registry / possession dates — these are what the

@@ -15,6 +15,7 @@ import {
 import { gate } from '../lib/gate.js';
 import { TODAY, computeIncomplete, normName, normMobile } from '../lib/core.js';
 import { requirePermission } from '../lib/auth.js';
+import { hasPermission, MANAGE_USERS } from '../lib/permissions.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 
 const router = Router();
@@ -522,8 +523,18 @@ router.patch('/:id/followups/:followupId', requirePermission('Engagement data â€
   if (!followUp) return res.status(404).json({ error: 'Follow-up not found.' });
 
   /* toggling done is the common case and never touches note/dueAt;
-     editing either of those re-validates them the same as on create. */
+     editing either of those re-validates them the same as on create.
+     Un-doing a completed follow-up is gated separately, one tier up
+     (the same MANAGE_USERS capability Settings/User Management already
+     use as this app's closest thing to "admin") â€” anyone who can log
+     engagement can mark one done, but reopening a record of contact
+     that already happened is a step only that tier should be able to
+     take back. */
   if (req.body?.done !== undefined) {
+    const reopening = followUp.done && !req.body.done;
+    if (reopening && !hasPermission(req.user.role, MANAGE_USERS, req.user.permissionOverrides)) {
+      return res.status(403).json({ error: `Your role (${req.user.role}) cannot undo a completed follow-up.` });
+    }
     followUp.done = !!req.body.done;
   } else {
     const { errors, patch } = validateFollowUpPatch({ note: req.body?.note ?? followUp.note, dueAt: req.body?.dueAt ?? followUp.dueAt });

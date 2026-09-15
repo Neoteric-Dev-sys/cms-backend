@@ -149,6 +149,7 @@ const TriggerAckSchema = new Schema({
   date: { type: String, required: true },
   ackedOn: { type: Date, default: Date.now },
   by: { type: String, default: null },
+  remark: { type: String, default: null },
 }, { _id: false });
 
 const ConsentSchema = new Schema({
