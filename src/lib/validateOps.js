@@ -14,9 +14,6 @@ import { TODAY, TODAY_UTC_MIDNIGHT, fmtD, OCCUPANCIES, projByName } from './core
 
 export const STATUSES = ['ACTIVE', 'EXITED', 'TRANSFER_IN_PROGRESS', 'DECEASED'];
 export const REFERRAL_STATUSES = ['Booked', 'Open — no follow-up logged', 'Lost — budget'];
-export const CALL_OUTCOMES = [
-  'Interested — follow up', 'Not interested', 'No answer', 'Call back later', 'Converted — re-invested',
-];
 
 /* This app's "today" is a fixed date, not the real calendar date — a
    plain "can't be in the future" message is confusing when the date
@@ -320,10 +317,15 @@ export function validateFollowUpPatch(d) {
   return { errors: {}, patch: { note, dueAt: dt } };
 }
 
+/* Outcome isn't an enforced enum — CallModal's own OUTCOME_OPTIONS is
+   just the quick-pick list, with an "Other" choice that lets staff
+   type anything else. call.outcome is only ever displayed as plain
+   text in the activity log, never branched on, so only a blank
+   outcome is actually rejected. */
 export function validateCallPatch(d) {
   const e = {};
   const outcome = String(d.outcome || '').trim();
-  if (!CALL_OUTCOMES.includes(outcome)) e.outcome = 'Choose a valid outcome.';
+  if (!outcome) e.outcome = 'Choose or describe an outcome.';
   const note = String(d.note || '').trim();
   const r = parseDateNotFuture(d.date, 'Call date');
   if (r.error) e.date = r.error;

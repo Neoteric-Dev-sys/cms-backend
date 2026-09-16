@@ -135,6 +135,7 @@ export const OCC = [
   { k: 'Retired', b: 44, band: 'below ₹15 L' },
   { k: 'NRI — Gulf', b: 80, band: '₹50 L – ₹1 Cr' },
   { k: 'Agriculture / Land', b: 72, band: '₹15 L – ₹50 L' },
+  { k: 'Housewife', b: 48, band: 'below ₹15 L' },
 ];
 export const CITY = ['Gwalior', 'Gwalior', 'Gwalior', 'Gwalior', 'Morar', 'Thatipur', 'Dabra', 'Shivpuri', 'Jhansi', 'Bhind', 'Datia', 'Delhi NCR', 'Indore', 'Dubai'];
 export const COMM = ['Agrawal Samaj', 'Jain Samaj', 'Brahmin', 'Rajput', 'Kayastha', 'Sindhi', 'Punjabi', 'Maheshwari', 'Other'];
