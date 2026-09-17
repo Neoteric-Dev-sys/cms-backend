@@ -9,7 +9,6 @@ import { Server as SocketIOServer } from 'socket.io';
 import { connectDB } from './db.js';
 import authRouter from './routes/auth.js';
 import customersRouter from './routes/customers.js';
-import projectsRouter from './routes/projects.js';
 import usersRouter from './routes/users.js';
 import rolesRouter from './routes/roles.js';
 import settingsRouter from './routes/settings.js';
@@ -17,6 +16,7 @@ import Customer from './models/Customer.js';
 import Settings from './models/Settings.js';
 import { requireAuth, requirePermission } from './lib/auth.js';
 import { seedRoles, refreshRoles } from './lib/roleStore.js';
+import { refreshMasterData } from './lib/masterDataStore.js';
 import { MANAGE_USERS } from './lib/permissions.js';
 
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
@@ -34,7 +34,6 @@ app.use(express.json());
 
 app.use('/api/auth', authRouter);
 app.use('/api/customers', requireAuth, customersRouter);
-app.use('/api/projects', requireAuth, projectsRouter);
 app.use('/api/users', requireAuth, requirePermission(MANAGE_USERS), usersRouter);
 /* only requireAuth here — the role list itself is readable by anyone
    signed in (it drives the governance matrix and every role picker);
@@ -70,6 +69,12 @@ connectDB()
     const { seeded } = await seedRoles();
     if (seeded) console.log(`Seeded ${seeded} roles from the access matrix`);
     await refreshRoles();
+
+    /* same reasoning as roles above — projByName()/OCC/COMM/etc. in
+       core.js must reflect the real Settings document (or its schema
+       defaults, for a fresh database) before the first request, not
+       whatever was hardcoded into core.js at the time it was written. */
+    await refreshMasterData();
 
     /* MongoDB Change Streams require a replica set — Atlas clusters
        (and any local `rs.initiate()`'d instance) qualify. Any write to

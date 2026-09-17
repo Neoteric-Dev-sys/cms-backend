@@ -72,6 +72,14 @@ export const OWNER_TYPES = ['INVESTOR', 'END_USER'];
 export const OCCUPANCIES = ['SELF_OCCUPIED', 'RENTED', 'VACANT'];
 
 export const VAL_STALE_DAYS = 90;
+/* Master data — seeded here so the app has something to run against
+   before a Settings document exists, but the arrays themselves are
+   mutated in place (never reassigned) by setMasterData() below once
+   lib/masterDataStore.js loads the real Settings singleton on boot and
+   after every master-data write. Every consumer (projByName, the
+   OCC/COMM/etc. exports, and every file that imports them) reads the
+   SAME array reference for the life of the process, so a mutation
+   here is visible everywhere immediately — no re-import, no restart. */
 export const PROJECTS = [
   { code: 'GC', name: 'Garden City', entity: 'Neoteric Properties', launch: 2019, lr: 1850, ask: 7200, resale: 6450, circle: 4100, noted: '2026-07-31', by: 'Finance — Head of Accounts', basis: '6 registered resales, Towers A–C, Apr–Jun 2026' },
   { code: 'RG', name: 'Regal Garden', entity: 'Neoteric Properties', launch: 2021, lr: 2000, ask: 6900, resale: 6100, circle: 3900, noted: '2026-07-31', by: 'Finance — Head of Accounts', basis: '5 registered resales, Tower A, Apr–Jun 2026' },
@@ -85,6 +93,11 @@ export const PROJECTS = [
 ];
 export const projByName = (n) => PROJECTS.find((p) => p.name === n);
 export const ENTITIES = [...new Set(PROJECTS.map((p) => p.entity))];
+export const RELATIONS = ['Spouse', 'Parent', 'Sibling', 'Child'];
+export const PROPERTY_TYPES = ['Villa', 'Plot', 'Flat'];
+export const FLAT_CONFIGS = ['1RK', '1BHK', '2BHK', '3BHK', '4BHK'];
+export const VILLA_CONFIGS = ['2BHK', '3BHK', '4BHK'];
+export const CALL_OUTCOMES = ['Interested — follow up', 'Not interested', 'No answer', 'Call back later', 'Converted — re-invested'];
 
 /* the single source of truth for whether a customer is still a
    "shell"/incomplete record — always recomputed from the actual
@@ -138,9 +151,35 @@ export const OCC = [
   { k: 'Housewife', b: 48, band: 'below ₹15 L' },
 ];
 export const CITY = ['Gwalior', 'Gwalior', 'Gwalior', 'Gwalior', 'Morar', 'Thatipur', 'Dabra', 'Shivpuri', 'Jhansi', 'Bhind', 'Datia', 'Delhi NCR', 'Indore', 'Dubai'];
-export const COMM = ['Agrawal Samaj', 'Jain Samaj', 'Brahmin', 'Rajput', 'Kayastha', 'Sindhi', 'Punjabi', 'Maheshwari', 'Other'];
+export const COMM = ['Agrawal Samaj', 'Jain Samaj', 'Brahmin', 'Rajput', 'Kayastha', 'Sindhi', 'Punjabi', 'Maheshwari'];
 export const SRC = ['Direct walk-in', 'DSA — Aarambh partner', 'Digital lead', 'Customer referral', 'Customer referral', 'Broker', 'Hoarding / print'];
 export const CTXT = ['Seepage — master bathroom wall', 'Lift AMC response delay', 'Parking allotment dispute', 'Society maintenance billing', 'Registry documents pending', 'Tile hollowness in bedroom', 'Water pressure on upper floor', 'Possession date slippage'];
+
+/* Replaces the CONTENTS of every master-data array above with what's
+   in the Settings document — .length = 0 then push, never `PROJECTS =
+   something`, so every module that imported PROJECTS keeps pointing
+   at the one array whose contents just changed, the same array-
+   mutation trick every file's projByName()/OCC.find()/etc. already
+   relies on implicitly. Only touches a list when the settings doc
+   actually has it (non-empty), so a partial/older document can't wipe
+   the rest back to empty. */
+function replace(arr, next) {
+  if (!Array.isArray(next) || !next.length) return;
+  arr.length = 0;
+  arr.push(...next);
+}
+export function setMasterData(s) {
+  if (!s) return;
+  replace(PROJECTS, s.projects);
+  replace(ENTITIES, [...new Set(PROJECTS.map((p) => p.entity))]);
+  replace(OCC, s.occupations);
+  replace(COMM, s.communities);
+  replace(RELATIONS, s.relations);
+  replace(PROPERTY_TYPES, s.propertyTypes);
+  replace(FLAT_CONFIGS, s.flatConfigs);
+  replace(VILLA_CONFIGS, s.villaConfigs);
+  replace(CALL_OUTCOMES, s.callOutcomes);
+}
 
 export const FEST = [
   { n: 'Navratri / Dussehra', s: new Date(2026, 9, 11) },

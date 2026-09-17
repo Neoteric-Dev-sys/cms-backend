@@ -10,8 +10,8 @@ import {
   validateLoanPatch, validateValuationPatch, validateNpsPatch, validateReferralPatch,
   validateEventPatch, validateExitPatch, validateMilestonesPatch, validateCallPatch,
   validateOccupancyPatch, validateFinancialsPatch, validateTriggerAckPatch, validateFollowUpPatch,
-  validateSegmentOverridePatch,
-  matchUnit, matchComplaint,
+  validateSegmentOverridePatch, validateReceiptPatch,
+  matchUnit, matchComplaint, parseUnitKey,
 } from '../lib/validateOps.js';
 import { gate } from '../lib/gate.js';
 import { TODAY, computeIncomplete, normName, normMobile } from '../lib/core.js';
@@ -421,6 +421,32 @@ router.patch('/:id/units/:index/financials', requirePermission('Owner base — n
   res.json(customer);
 }));
 
+/* Logs one payment received — adds to paid-to-date rather than
+   replacing it (see validateReceiptPatch and MLedger.jsx's own note on
+   why paid is never a hand-typed total), bumps the receipt count, and
+   moves lastReceipt forward if this one is more recent than whatever
+   was on file. */
+router.post('/:id/units/:index/receipts', requirePermission('Payment ledger and outstanding'), asyncHandler(async (req, res) => {
+  const customer = await Customer.findOne({ id: req.params.id });
+  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+  const { errors, patch, key } = validateReceiptPatch(req.body || {});
+  if (Object.keys(errors).length) return res.status(400).json({ errors });
+
+  const idx = Number(req.params.index);
+  const unit = customer.units[idx];
+  if (!matchUnit(unit, key)) {
+    return res.status(409).json({ error: 'This unit list changed since you loaded it — refresh and try again.' });
+  }
+
+  unit.paid = (unit.paid || 0) + patch.amount;
+  unit.receipts = (unit.receipts || 0) + 1;
+  if (!unit.lastReceipt || patch.date > unit.lastReceipt) unit.lastReceipt = patch.date;
+  customer.markModified('units');
+  await customer.save();
+  res.status(201).json(customer);
+}));
+
 /* agreement/registry/possession dates — these are exactly what the
    Document Vault checklist reads (see docsFor() in derived.js), so
    editing them here is what actually makes "View"/"Request" reflect
@@ -760,9 +786,11 @@ router.delete('/:id/units/:index', requirePermission('Owner base — names and u
   const customer = await Customer.findOne({ id: req.params.id });
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
+  const key = parseUnitKey(req.body || {});
+  if (key.error) return res.status(400).json({ error: key.error });
+
   const idx = Number(req.params.index);
   const unit = customer.units[idx];
-  const key = { unit: req.body?.unit, project: req.body?.project };
   if (!matchUnit(unit, key)) {
     return res.status(409).json({ error: 'This unit list changed since you loaded it — refresh and try again.' });
   }

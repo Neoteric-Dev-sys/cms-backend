@@ -134,12 +134,14 @@ export function validateProfilePatch(d) {
   const p = {};
 
   if (d.salutation !== undefined) p.salutation = String(d.salutation || '').trim() || null;
-  if (d.name !== undefined) {
-    const v = String(d.name || '').trim();
-    if (!v) e.name = 'Name is required.';
-    else p.name = v;
-  }
+  /* every field on this form is optional, name included — a record
+     that's genuinely incomplete (see validateIncomplete.js's shell
+     path) can have its name filled in later the same way any other
+     "not captured yet" field is, rather than being rejected outright
+     because one field was blank. */
+  if (d.name !== undefined) p.name = String(d.name || '').trim();
   if (d.mobile !== undefined) p.mobile = String(d.mobile || '').trim() || null;
+  if (d.altMobile !== undefined) p.altMobile = String(d.altMobile || '').trim() || null;
   if (d.pan !== undefined) p.pan = String(d.pan || '').replace(/\s/g, '').toUpperCase() || null;
   if (d.aadhaarHeld !== undefined) p.aadhaarHeld = !!d.aadhaarHeld;
   if (d.aadhaarNo !== undefined) p.aadhaarNo = String(d.aadhaarNo || '').replace(/\s/g, '') || null;

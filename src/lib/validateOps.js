@@ -33,7 +33,7 @@ function parseDateNotFuture(v, label) {
    and this financials-edit path both need to key on such a unit before
    it has one, so only `project` is actually required here; `unit`
    itself is allowed to be blank. */
-function parseUnitKey(d) {
+export function parseUnitKey(d) {
   const unit = String(d.unit || '').trim();
   const project = String(d.project || '').trim();
   if (!project) return { error: 'Missing unit reference — reload and try again.' };
@@ -251,6 +251,27 @@ export function validateFinancialsPatch(d) {
 
   if (Object.keys(e).length) return { errors: e, patch: null, key: null };
   return { errors: {}, patch: p, key };
+}
+
+/* Logs one payment received against a unit — additive, never a raw
+   "type the new paid-to-date total" field (see MLedger.jsx's own note
+   on this): paid-to-date is the sum of what's actually been logged
+   here, so a reconciliation gap shows up as a specific missing/wrong
+   receipt instead of vanishing into a hand-typed total nobody can
+   trace back to an actual payment. */
+export function validateReceiptPatch(d) {
+  const e = {};
+  const key = parseUnitKey(d);
+  if (key.error) e.unit = key.error;
+
+  const amount = Number(d.amount);
+  if (!(amount > 0)) e.amount = 'Enter the amount received.';
+
+  const r = parseDateNotFuture(d.date, 'Receipt date');
+  if (r.error) e.date = r.error;
+
+  if (Object.keys(e).length) return { errors: e, patch: null, key: null };
+  return { errors: {}, patch: { amount, date: r.date }, key };
 }
 
 /* Per-unit occupancy for the Investor tab. Unlike the money/legal

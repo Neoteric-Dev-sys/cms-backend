@@ -215,6 +215,7 @@ const CustomerSchema = new Schema({
   aadhaarNo: { type: String, default: null },
   kycDate: { type: Date, default: null },
   mobile: { type: String, default: '', index: true },
+  altMobile: { type: String, default: null },
   email: { type: String, default: null },
   corrAddr: String,
   city: String,
