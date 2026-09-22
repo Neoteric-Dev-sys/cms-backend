@@ -12,16 +12,23 @@ import customersRouter from './routes/customers.js';
 import usersRouter from './routes/users.js';
 import rolesRouter from './routes/roles.js';
 import settingsRouter from './routes/settings.js';
+import eventsRouter from './routes/events.js';
+import auditLogsRouter from './routes/auditLogs.js';
 import Customer from './models/Customer.js';
 import Settings from './models/Settings.js';
 import { requireAuth, requirePermission } from './lib/auth.js';
-import { seedRoles, refreshRoles } from './lib/roleStore.js';
+import { auditRoute } from './lib/auditLog.js';
+import { seedRoles, ensureSuperAdminRole, backfillModuleCapabilities, refreshRoles } from './lib/roleStore.js';
 import { refreshMasterData } from './lib/masterDataStore.js';
 import { MANAGE_USERS } from './lib/permissions.js';
 
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
 
 const app = express();
+/* behind Render/Railway/any single reverse proxy in production — without
+   this, req.ip (recorded on every audit log row) is the proxy's own
+   address for every request, not the caller's. */
+if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
 /* pure JSON API, no HTML/static assets served from here — the default
    CSP (meant for pages that load scripts/styles) is unused overhead
    for a fetch-only backend, so it's the one directive turned off */
@@ -32,19 +39,38 @@ app.use(cors({ origin: FRONTEND_ORIGIN, credentials: true }));
 app.use(cookieParser());
 app.use(express.json());
 
-app.use('/api/auth', authRouter);
-app.use('/api/customers', requireAuth, customersRouter);
-app.use('/api/users', requireAuth, requirePermission(MANAGE_USERS), usersRouter);
+/* auditRoute(resource) is mounted on every router below (auth included)
+   so every state-changing request the API ever serves — success or
+   failure — is written to the AuditLog collection with no per-route
+   instrumentation. See lib/auditLog.js. */
+app.use('/api/auth', auditRoute('auth'), authRouter);
+app.use('/api/customers', requireAuth, auditRoute('customers'), customersRouter);
+app.use('/api/users', requireAuth, requirePermission(MANAGE_USERS), auditRoute('users'), usersRouter);
 /* only requireAuth here — the role list itself is readable by anyone
    signed in (it drives the governance matrix and every role picker);
    each write route below carries its own permission check. */
-app.use('/api/roles', requireAuth, rolesRouter);
+app.use('/api/roles', requireAuth, auditRoute('roles'), rolesRouter);
 /* same shape as /api/roles — readable by anyone signed in (the
    Portfolio Statement's letterhead needs it), writable only by
    requirePermission(MANAGE_USERS) inside the router itself. */
-app.use('/api/settings', requireAuth, settingsRouter);
+app.use('/api/settings', requireAuth, auditRoute('settings'), settingsRouter);
+/* same shape again — readable by anyone signed in (the Invite list
+   drawer needs the event picker for any staff member), writable only
+   by requirePermission('Manage events and invite lists') inside the
+   router itself. */
+app.use('/api/events', requireAuth, auditRoute('events'), eventsRouter);
+/* read-only viewer onto everything the line above wrote — same
+   capability as /api/users, see routes/auditLogs.js. Not itself
+   audited: GETs never are (auditRoute skips them), and this route in
+   particular reading its own write log is not a fact worth a row. */
+app.use('/api/audit-logs', requireAuth, requirePermission(MANAGE_USERS), auditLogsRouter);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
+/* default route for uptime pingers (UptimeRobot, cron-job.org, Render's
+   own health check, etc.) that hit '/' rather than '/api/health' — keeps
+   a free-tier instance from being treated as 404/down and spun back down */
+app.get('/', (_req, res) => res.json({ ok: true }));
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
@@ -68,6 +94,11 @@ connectDB()
        cache denies everything (see roleLevel in permissions.js) */
     const { seeded } = await seedRoles();
     if (seeded) console.log(`Seeded ${seeded} roles from the access matrix`);
+    const { created, backfilled } = await ensureSuperAdminRole();
+    if (created) console.log('Created the Super Admin role');
+    else if (backfilled.length) console.log(`Backfilled Super Admin with ${backfilled.length} new capabilit${backfilled.length === 1 ? 'y' : 'ies'}: ${backfilled.join(', ')}`);
+    const { touched } = await backfillModuleCapabilities();
+    if (touched) console.log(`Backfilled module-visibility rows onto ${touched} role(s)`);
     await refreshRoles();
 
     /* same reasoning as roles above — projByName()/OCC/COMM/etc. in

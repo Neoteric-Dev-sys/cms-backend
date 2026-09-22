@@ -252,7 +252,9 @@ const CustomerSchema = new Schema({
   openComplaints: { type: [OpenComplaintSchema], default: [] },
   nps: { type: Number, default: null },
   npsDate: { type: Date, default: null },
+  npsReason: { type: String, default: null },
   litigation: { type: Boolean, default: false },
+
   referrals: { type: [ReferralSchema], default: [] },
   events: { type: [EventSchema], default: [] },
   followUps: { type: [FollowUpSchema], default: [] },

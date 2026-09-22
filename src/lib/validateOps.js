@@ -295,9 +295,11 @@ export function validateNpsPatch(d) {
   if (!(Number.isInteger(n) && n >= 0 && n <= 10)) e.nps = 'NPS must be a whole number from 0 to 10.';
   const r = parseDateNotFuture(d.npsDate, 'NPS date');
   if (r.error) e.npsDate = r.error;
+  const reason = d.npsReason != null ? String(d.npsReason).trim() : null;
   if (Object.keys(e).length) return { errors: e, patch: null };
-  return { errors: {}, patch: { nps: n, npsDate: r.date } };
+  return { errors: {}, patch: { nps: n, npsDate: r.date, npsReason: reason || null } };
 }
+
 
 export function validateReferralPatch(d) {
   const e = {};

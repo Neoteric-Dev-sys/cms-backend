@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import User from '../models/User.js';
-import { hashPassword } from '../lib/auth.js';
+import { hashPassword, signToken, setAuthCookie, requirePermission } from '../lib/auth.js';
+import { resolvedPermissions } from '../lib/permissions.js';
 import { validateUserCreate, validateUserPatch, validateUserPermissions, validatePasswordReset } from '../lib/validateUsers.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 
@@ -95,6 +96,47 @@ router.patch('/:id/password', asyncHandler(async (req, res) => {
   user.passwordHash = await hashPassword(data.password);
   await user.save();
   res.json({ ok: true });
+}));
+
+/* Logs the caller in AS the target user — no password needed, since
+   the whole point is switching into an account you don't hold the
+   credentials for. Gated on its own capability (see permissions.js),
+   deliberately separate from MANAGE_USERS so holding the latter (e.g.
+   Board/CEO) is not enough by itself; only a role a Super Admin
+   explicitly grants this to can ever reach it. Logged to the console
+   for now — there's no audit-log subsystem yet to write this to.
+
+   The real (originally signed-in) identity rides along as an extra
+   claim on the issued token — see signToken()'s own comment — so
+   POST /api/auth/revert-impersonation can switch back later, and so
+   a page refresh mid-impersonation still knows who "really" is signed
+   in. `req.user.realUserId` is already set if this is a SECOND switch
+   made while already impersonating someone else; falling back to it
+   (rather than always using req.user.id/.email) keeps a chain of
+   switches anchored to the one true original account instead of each
+   hop overwriting the last. */
+router.post('/:id/impersonate', requirePermission('Impersonate other user accounts'), asyncHandler(async (req, res) => {
+  if (req.params.id === req.user.id) {
+    return res.status(400).json({ error: 'You are already signed in as this account.' });
+  }
+  const target = await User.findById(req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (!target.active) return res.status(400).json({ error: `${target.name}'s account is deactivated.` });
+
+  const realUser = {
+    id: req.user.realUserId || req.user.id,
+    email: req.user.realUserEmail || req.user.email,
+  };
+  console.log(`[impersonate] ${realUser.email} switched into ${target.email} (${target.role})`);
+
+  const token = signToken(target, realUser);
+  setAuthCookie(res, token);
+  res.json({
+    user: {
+      id: target._id.toString(), email: target.email, name: target.name, role: target.role,
+      permissions: resolvedPermissions(target.role, target.permissionOverrides || {}),
+    },
+  });
 }));
 
 export default router;

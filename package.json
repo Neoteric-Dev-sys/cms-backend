@@ -4,6 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Neoteric Connect — Owner Portfolio & Re-Investment System (backend API)",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",

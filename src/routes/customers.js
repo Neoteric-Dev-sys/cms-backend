@@ -558,7 +558,7 @@ router.delete('/:id/documents/:docId', requirePermission('Owner base — names a
    Contact Gate.
    ===================================================================== */
 
-router.patch('/:id/nps', requirePermission('Engagement data — NPS, referrals, events, visits'), asyncHandler(async (req, res) => {
+router.patch('/:id/nps', asyncHandler(async (req, res) => {
   const customer = await Customer.findOne({ id: req.params.id });
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
@@ -567,9 +567,12 @@ router.patch('/:id/nps', requirePermission('Engagement data — NPS, referrals, 
 
   customer.nps = patch.nps;
   customer.npsDate = patch.npsDate;
+  customer.npsReason = patch.npsReason;
   await customer.save();
   res.json(customer);
+
 }));
+
 
 router.post('/:id/referrals', requirePermission('Engagement data — NPS, referrals, events, visits'), asyncHandler(async (req, res) => {
   const customer = await Customer.findOne({ id: req.params.id });

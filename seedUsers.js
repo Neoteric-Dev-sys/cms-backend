@@ -6,7 +6,7 @@ import 'dotenv/config';
 import { connectDB } from './src/db.js';
 import User from './src/models/User.js';
 import { hashPassword } from './src/lib/auth.js';
-import { ROLES } from './src/lib/permissions.js';
+import { SEED_ROLES } from './src/lib/permissions.js';
 
 const DEMO_PASSWORD = 'Demo@123';
 
@@ -18,7 +18,7 @@ async function seedUsers() {
   const passwordHash = await hashPassword(DEMO_PASSWORD);
   const rows = [];
 
-  for (const role of ROLES) {
+  for (const role of SEED_ROLES) {
     const email = `${slug(role)}@neoteric.test`;
     await User.findOneAndUpdate(
       { email },

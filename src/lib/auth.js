@@ -21,9 +21,20 @@ function secret() {
   return s;
 }
 
-export function signToken(user) {
+/* `realUser` (optional): { id, email } of the account actually holding
+   the session, carried as extra claims when the token is issued for
+   someone ELSE — i.e. mid-impersonation. This is what lets the
+   frontend show "Impersonating" and offer a way back after a page
+   refresh, since nothing about that fact is knowable from the target
+   user's own row — see requireAuth below, which reads it back off,
+   and routes/users.js's impersonate route / auth.js's revert route,
+   the only two places that ever pass it. */
+export function signToken(user, realUser) {
   return jwt.sign(
-    { id: user.id ?? user._id?.toString(), email: user.email, name: user.name, role: user.role },
+    {
+      id: user.id ?? user._id?.toString(), email: user.email, name: user.name, role: user.role,
+      ...(realUser ? { realUserId: realUser.id, realUserEmail: realUser.email } : {}),
+    },
     secret(),
     { expiresIn: TOKEN_TTL }
   );
@@ -78,6 +89,8 @@ export const requireAuth = asyncHandler(async (req, res, next) => {
   req.user = {
     id: user._id.toString(), email: user.email, name: user.name, role: user.role,
     permissionOverrides: user.permissionOverrides || {},
+    realUserId: payload.realUserId || null,
+    realUserEmail: payload.realUserEmail || null,
   };
   next();
 });

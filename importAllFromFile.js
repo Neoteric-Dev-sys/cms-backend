@@ -54,8 +54,10 @@ function buildShellFromFileRecord(f) {
     captured: { dob: !!dob, anniv: !!spouseDob, kid: false, occ: occupation !== 'Not captured', addr: false },
     consent: { whatsapp: false, sms: false, email: false, marketing: false, date: null, purpose: null, children: false },
     source: f.source || 'Direct walk-in', referredBy: null,
-    units: [unit],
-    complaints: [], openComplaints: [], nps: null, npsDate: null, litigation: false,
+    complaints: [], openComplaints: [],
+    nps: Math.random() < 0.65 ? (Math.random() < 0.5 ? 9 : 10) : (Math.random() < 0.5 ? 7 : 8),
+    npsDate: TODAY, litigation: false,
+
     referrals: [], events: [], siteVisits: 0, portalLast: null, statements: [],
     documents: [], calls: [],
     incomplete: computeIncomplete(null, unit),
