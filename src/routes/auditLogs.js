@@ -15,13 +15,18 @@ const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
    whoever can create or deactivate an account is the audience for who
    did what. */
 router.get('/', asyncHandler(async (req, res) => {
-  const { resource, method, ok, actor, from, to, page } = req.query;
+  const { resource, method, ok, actor, from, to, page, recordId } = req.query;
 
   const filter = {};
   if (resource) filter.resource = resource;
   if (method) filter.method = String(method).toUpperCase();
   if (ok === 'true') filter.ok = true;
   if (ok === 'false') filter.ok = false;
+  /* the record's own human-readable id (e.g. a customer's "NEO-C-158"),
+     as it appears in the route's own :id param — what Customer
+     Master's own Audit log tab filters on to show one owner's history
+     instead of the whole system's. */
+  if (recordId) filter['params.id'] = recordId;
   if (actor) {
     const needle = new RegExp(escapeRegex(String(actor).trim()), 'i');
     filter.$or = [{ 'actor.name': needle }, { 'actor.email': needle }];

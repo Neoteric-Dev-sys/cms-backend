@@ -49,12 +49,21 @@ export function signToken(user, realUser) {
    some browsers unless also Secure — but plain HTTP localhost isn't
    Secure, so dev needs the Lax/insecure pair instead. Same options must
    be reused for both setting and clearing the cookie, or the browser
-   won't recognize clearCookie's call as targeting the same cookie. */
-const isProd = process.env.NODE_ENV === 'production';
+   won't recognize clearCookie's call as targeting the same cookie.
+
+   Derived from FRONTEND_ORIGIN itself, not NODE_ENV — CORS already
+   depends on FRONTEND_ORIGIN being set correctly (nothing works at all
+   otherwise), whereas NODE_ENV is a second, separate flag nothing else
+   here checks, easy to deploy without ever noticing it's still unset.
+   A cookie silently issued with the wrong flags doesn't error, it just
+   never gets sent back — which is exactly the "login succeeds, every
+   request after it 401s" symptom that's hard to tell apart from a CORS
+   or permission problem. */
+const isLocalOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(process.env.FRONTEND_ORIGIN || '');
 const cookieOptions = {
   httpOnly: true,
-  sameSite: isProd ? 'none' : 'lax',
-  secure: isProd,
+  sameSite: isLocalOrigin ? 'lax' : 'none',
+  secure: !isLocalOrigin,
 };
 
 export function setAuthCookie(res, token) {

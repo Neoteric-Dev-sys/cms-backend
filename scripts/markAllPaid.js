@@ -20,12 +20,19 @@
    summary at the end before trusting it blindly. */
 
 const API_BASE = process.env.API_BASE || 'http://localhost:3000';
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@neotericgrp.in';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'hussain@neotericgrp.in';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Demo@123';
 
+/* Yesterday, in UTC — not "today" in this machine's local timezone.
+   The server validates the receipt date isn't in the future using ITS
+   OWN clock (see parseDateNotFuture in validateOps.js); for several
+   hours around local midnight in any timezone ahead of UTC (IST
+   included), "today" here is already "tomorrow" there, so a same-day
+   date gets rejected as a future date. A day back is safely in the
+   past everywhere, no matter which timezone either side runs in. */
 function todayInput() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const d = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
 async function login() {

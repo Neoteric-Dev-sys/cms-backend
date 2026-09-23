@@ -27,8 +27,12 @@ const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
 const app = express();
 /* behind Render/Railway/any single reverse proxy in production — without
    this, req.ip (recorded on every audit log row) is the proxy's own
-   address for every request, not the caller's. */
-if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
+   address for every request, not the caller's. Gated on FRONTEND_ORIGIN
+   rather than NODE_ENV — same reasoning as the auth cookie's flags in
+   lib/auth.js: FRONTEND_ORIGIN is the one env var that's already
+   verified correct (CORS depends on it), so nothing here can silently
+   drift out of sync with a second, separately-set flag. */
+if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(FRONTEND_ORIGIN)) app.set('trust proxy', 1);
 /* pure JSON API, no HTML/static assets served from here — the default
    CSP (meant for pages that load scripts/styles) is unused overhead
    for a fetch-only backend, so it's the one directive turned off */
